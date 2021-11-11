@@ -1,0 +1,59 @@
+name: Build and Deploy DEV
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  Build_and_Package:
+    runs-on: [self-hosted, pdp-dev]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - run: aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 224863817770.dkr.ecr.eu-central-1.amazonaws.com
+      - run: sbt docker:publish
+
+  Deploy_DEV:
+    needs: Build_and_Package
+    runs-on: [self-hosted, pdp-dev]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Check out repository code pdp-gitops
+        uses: actions/checkout@v2
+        with:
+          repository: 'SRGSSR/pdp-gitops'
+          ref: 'master'
+          ssh-key: ${{ secrets.PDP_GITOPS_REPO_SSH_PRIVATE_KEY }}
+          path: 'pdp-gitops'
+      - name: Commit new image tag to pdp-gitops
+        run: |
+          git config --global user.email "pdp@srgssr.ch"
+          git config --global user.name "Github Workflow"
+          ls pdp-gitops
+          cd pdp-gitops
+          export TAG=$(git rev-parse HEAD) && cd dev/graphql-api && /home/runner/kustomize edit set image 224863817770.dkr.ecr.eu-central-1.amazonaws.com/graphql-api=224863817770.dkr.ecr.eu-central-1.amazonaws.com/graphql-api:$TAG
+          git add kustomization.yaml
+          git commit -m "Postbuild Tag for graphql-api dev"
+          git push origin HEAD:master
+      - name: Wait for ArgoCD
+        run: |
+          sleep 10
+          argocd login --username admin --password ${{ secrets.ARGOCD_ADMIN_SECRET }} argocd.pdp.dev.admin.srgssr.ch
+          argocd app wait --health graphql-api
+
+  Test_DEV:
+    needs: Deploy_DEV
+    runs-on: [self-hosted, pdp-dev]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          repository: 'SRGSSR/pdp-gitops'
+          ref: 'master'
+          ssh-key: ${{ secrets.PDP_GITOPS_REPO_SSH_PRIVATE_KEY }}
+          path: 'pdp-gitops'
+      - name: Smoke test
+        run: cd pdp-gitops/test && ./smoke_test.sh dev
+      - name: API test
+        run: cd pdp-gitops/test && ./smoke_test.sh dev

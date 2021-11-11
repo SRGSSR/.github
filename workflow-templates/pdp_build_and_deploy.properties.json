@@ -1,0 +1,13 @@
+{
+    "name": "Build and Deploy DEV",
+    "description": "",
+    "iconName": "example-icon",
+    "categories": [
+        "Scala"
+    ],
+    "filePatterns": [
+        "package.json$",
+        "^Dockerfile",
+        ".*\\.md$"
+    ]
+}
